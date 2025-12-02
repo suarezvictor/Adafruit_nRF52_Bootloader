@@ -112,7 +112,7 @@ extern void tusb_hal_nrf_power_event(uint32_t event);
 #define DFU_MAGIC_UF2_RESET             0x57
 #define DFU_MAGIC_SKIP                  0x6d
 
-#define DFU_DBL_RESET_MAGIC             0x5A1AD5      // SALADS
+//#define DFU_DBL_RESET_MAGIC             0x5A1AD5      // SALADS
 #define DFU_DBL_RESET_APP               0x4ee5677e
 #define DFU_DBL_RESET_DELAY             500
 #define DFU_DBL_RESET_MEM               0x20007F7C
@@ -243,12 +243,15 @@ static void check_dfu_mode(void) {
   bool const uf2_dfu         = (gpregret == DFU_MAGIC_UF2_RESET);
   bool const dfu_skip        = (gpregret == DFU_MAGIC_SKIP);
 
-  bool const reason_reset_pin = (NRF_POWER->RESETREAS & POWER_RESETREAS_RESETPIN_Msk) ? true : false;
 
   // start either serial, uf2 or ble
+#ifdef DFU_DBL_RESET_MAGIC
+  bool const reason_reset_pin = (NRF_POWER->RESETREAS & POWER_RESETREAS_RESETPIN_Msk) ? true : false;
   bool dfu_start = _ota_dfu || serial_only_dfu || uf2_dfu ||
                    (((*dbl_reset_mem) == DFU_DBL_RESET_MAGIC) && reason_reset_pin);
-
+#else
+  bool dfu_start = _ota_dfu || serial_only_dfu || uf2_dfu;
+#endif
   // Clear GPREGRET if it is our values
   if (dfu_start || dfu_skip) NRF_POWER->GPREGRET = 0;
 
@@ -269,13 +272,13 @@ static void check_dfu_mode(void) {
 
   // App mode: Double Reset detection or DFU startup for nrf52832
   if (!(just_start_app || dfu_start || !valid_app)) {
-#ifdef NRF52832_XXAA
+#if defined(NRF52832_XXAA) || !defined(DFU_DBL_RESET_MAGIC)
     /* Even DFU is not active, we still force an 1000 ms dfu serial mode when startup
      * to support auto programming from Arduino IDE
      *
      * Note: Double Reset WONT work with nrf52832 since all its SRAM got cleared with GPIO reset.
      */
-    bootloader_dfu_start(false, DFU_SERIAL_STARTUP_INTERVAL, false);
+    bootloader_dfu_start(false, (*dbl_reset_mem) == DFU_DBL_RESET_APP ? 0 : DFU_SERIAL_STARTUP_INTERVAL, false);
 #else
     // Note: RESETREAS is not clear by bootloader, it should be cleared by application upon init()
     if (reason_reset_pin) {
